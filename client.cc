@@ -3,18 +3,32 @@
 #include <sys/ipc.h>
 #include <stdio.h>
 #include <sys/shm.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <sys/stat.h>
 #include <cstring>
+#include "shmstruct.h"
 
 #define SIZE 4096
+#define SEMNAME "SHMSEM"
 
 using namespace std;
- 
+
 int main (int argc, char *argv[]) {
 
-  key_t key = ftok("test.txt", 40);
-  int shmid = shmget(key, SIZE, 0644 | IPC_CREAT); 
-  char *mem_block = (char*) shmat(shmid, (void*)0,0);
+  int shmid = shm_open("test.txt", O_RDWR, 0);
+  if (shmid == -1) {
+    cout << "shm_open fail" << endl;
+  } else {
+    cout << "Shared Memory Created" << endl;
+  }
 
+  struct shmbuf *store = static_cast<shmbuf*>(mmap(NULL, sizeof(*store), PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0));
+  if (store == MAP_FAILED) {
+    cout << "MAP FAILED" << endl;
+  }
   int arglen = 0;
 
   for (int i = 1; i < argc; i++) {
@@ -29,9 +43,21 @@ int main (int argc, char *argv[]) {
     strcat(args, argv[i]);
   }
   strcat(args, "\0");
+  // Potential error maybe +1 to count
+  store->count = strlen(args);
+  cout << "Args complete" << endl;
   // Sends the important info from agrv to the shared memory
-  strncpy(mem_block, args, SIZE);
+  // Same thing here. May need to add +1 maybe not
+  memcpy(&store->buffer, args, strlen(args));
+  cout << store->buffer << endl;
+  if (sem_post(&store->sem1) == -1) {
+    cout << "sem_post error" << endl;
+  }
+  cout << "Wrote args to mem" << endl;
+  
+  
 
-
-  //shmctl(shmid, IPC_RMID, NULL);
+  shmctl(shmid, IPC_RMID, NULL);
+  munmap(store->buffer,SIZE);
+  return;
 }

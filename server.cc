@@ -3,25 +3,63 @@
 #include <sys/ipc.h>
 #include <stdio.h>
 #include <sys/shm.h>
+#include <unistd.h>
+#include <semaphore.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <cstring>
+#include <ctype.h>
+#include "shmstruct.h"
 
 using namespace std;
 
-#define SIZE 4096
+
 
 int main (int argc, char *argv[]) {
-  key_t key = ftok("test.txt", 0);
-  int shmid = shmget(key, SIZE, 0666|IPC_CREAT);
-  char *mem_block = (char*) shmat(shmid,  (void*)0,0);
 
-  cout << "Read this: " << mem_block << endl;
+  shm_unlink("test.txt");
+  int shmid = shm_open("test.txt", O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+  if (shmid == -1) {
+    cerr << "shm_open " << strerror(errno) << endl;
+  } else {
+    clog << "SERVER STARTED" << endl;
+  }
 
-  char **keywords = (char**) malloc(sizeof(char*)* strlen(mem_block)+1);
-  char *arg = (char*) malloc(sizeof(char)* strlen(mem_block)+1);
+  if (ftruncate(shmid, sizeof(struct shmbuf)) == -1) {
+    cout << "Mem not truncated" << endl;
+  } else {
+    cout << "Mem truncated" << endl;
+  }
+
+  // May not need to be static casted
+  struct shmbuf *store = static_cast<shmbuf*>(mmap(nullptr, sizeof(*store), PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0));
+  if (store == MAP_FAILED) {
+      cout << "MAP FAILED" << endl;
+      cerr << "mmap " << strerror(errno) << endl;
+  } else {
+    cout << "Map casted" << endl;
+  }
+  
+  if (sem_init(&store->sem1, 1, 0) == -1) {
+    cout << "Error with sem_init on 1" << endl;
+  }
+  if (sem_init(&store->sem2, 1, 0) == -1) {
+    cout << "Error with sem_init on 2" << endl;
+  }
+
+  if (sem_wait(&store->sem1) == -1) {
+    cout << "sem_wait error";
+  }
+  clog << "CLIENT REQUEST RECIEVED" << endl;
+  cout << "Read this: " << store->buffer << endl;
+
+  char **keywords = (char**) malloc(sizeof(char*)* strlen(store->buffer)+1);
+  char *arg = (char*) malloc(sizeof(char)* strlen(store->buffer)+1);
   char *op = (char*) malloc(sizeof(char) * 2);
   FILE* file;
 
-  arg = strtok(mem_block, "_");
+  arg = strtok(store->buffer, "_");
   int count = 0;
   while (arg != NULL) {
     keywords[count] = arg;
@@ -38,14 +76,15 @@ int main (int argc, char *argv[]) {
   }
 
   file = fopen(keywords[0], "r");
-  if (file != NULL) {
-    size_t len = 0;
-    char *line = NULL;
-    
-    while ((getline(&line, &len, file)) != -1) {
-
+  while (true) {
+    if (file != NULL) {
+      size_t len = 0;
+      char *line = NULL;
+      while ((getline(&line, &len, file)) != -1) {
+        
+      }
     }
   }
 
-  shmdt(mem_block);
+  shm_unlink("test.txt");
 }
