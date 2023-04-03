@@ -18,18 +18,17 @@ using namespace std;
 
 int main (int argc, char *argv[]) {
 
-  shm_unlink("test.txt");
-  int shmid = shm_open("test.txt", O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+  int shmid = shm_open("test.txt", O_RDWR, 0);
   if (shmid == -1) {
     cerr << "shm_open " << strerror(errno) << endl;
   } else {
     clog << "SERVER STARTED" << endl;
   }
 
-  if (ftruncate(shmid, sizeof(struct shmbuf)) == -1) {
-    cout << "Mem not truncated" << endl;
-  } else {
-    cout << "Mem truncated" << endl;
+  sem_t *sem = sem_open("Test_sem", O_CREAT | O_EXCL, 0664, 0);
+
+  if (sem == NULL) {
+    cout << "Named sen not instantiated" << endl;
   }
 
   // May not need to be static casted
@@ -41,50 +40,41 @@ int main (int argc, char *argv[]) {
     cout << "Map casted" << endl;
   }
   
-  if (sem_init(&store->sem1, 1, 0) == -1) {
-    cout << "Error with sem_init on 1" << endl;
-  }
-  if (sem_init(&store->sem2, 1, 0) == -1) {
-    cout << "Error with sem_init on 2" << endl;
+  cout << "test" << endl;
+  if (sem_wait(sem) == -1) {
+    cout << "Named sem wait error" << endl;
   }
 
-  if (sem_wait(&store->sem1) == -1) {
-    cout << "sem_wait error";
-  }
-  clog << "CLIENT REQUEST RECIEVED" << endl;
-  cout << "Read this: " << store->buffer << endl;
-
-  char **keywords = (char**) malloc(sizeof(char*)* strlen(store->buffer)+1);
-  char *arg = (char*) malloc(sizeof(char)* strlen(store->buffer)+1);
-  char *op = (char*) malloc(sizeof(char) * 2);
-  FILE* file;
-
-  arg = strtok(store->buffer, "_");
-  int count = 0;
-  while (arg != NULL) {
-    keywords[count] = arg;
-    arg = strtok(NULL, "_");
-    count++;
-  }
-  if (count > 3) {
-    op = keywords[2];
-  }
-
-  // Testing
-  for (int i = 0; i < count; i++) {
-    cout << keywords[i] << endl;
-  }
-
-  file = fopen(keywords[0], "r");
   while (true) {
+    if (sem_post(&store->sem1) == -1) {
+      cout << "sem_post error";
+    }
+    clog << "CLIENT REQUEST RECIEVED" << endl;
+    cout << "Read this: " << store->buffer << endl;
+
+    char *path = (char*) malloc(sizeof(char)* strlen(store->buffer)+1);
+    FILE* file;
+    path = store->buffer;
+
+    file = fopen(path, "r");
+    int count = 0;
     if (file != NULL) {
       size_t len = 0;
       char *line = NULL;
       while ((getline(&line, &len, file)) != -1) {
-        
+        if (count != 0 && count%4 == 0) {
+          if (sem_wait(&store->sem2) == -1) {
+            cout << "Error in sem_wait while putting lines in shared memory" << endl;
+          }
+        }
+        // If error maybe check if sending null terminator since no + 1
+        memcpy(&store->buffer[(count%4)*1024], line, strlen(line)+1);
+        char test[BUF_SIZE];
+        strncpy(test,&store->buffer[count%4*OFFSET], OFFSET);
+        cout << test << endl;
+        count++;
       }
+      sem_post(&store->sem2);
     }
   }
-
-  shm_unlink("test.txt");
 }

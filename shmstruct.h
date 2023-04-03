@@ -9,8 +9,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define BUF_SIZE 1024
-
+#define BUF_SIZE 4096
+#define OFFSET 1024
 struct shmbuf {
     sem_t sem1;
     sem_t sem2;
