@@ -6,5 +6,5 @@ using namespace std;
 #define CLIENT_H_
 int client (int argc, char * argv[]);
 
-void checkLine (char *str[], string line, int argNum);
+void* checkLine (void *threadarg);
 #endif // CLIENT_H_

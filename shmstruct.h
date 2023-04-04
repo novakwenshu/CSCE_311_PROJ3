@@ -18,6 +18,7 @@ struct shmbuf {
     sem_t sem2;
     size_t count;  // Number of bytes being used in the buffer
     char buffer[BUF_SIZE];
+    int toBreak = 0;
 };
 
 

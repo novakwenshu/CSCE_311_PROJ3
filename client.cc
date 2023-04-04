@@ -20,20 +20,23 @@
 
 using namespace std;
 
+struct thread_info {
+  char **str;
+  string line;
+  int argNum;
+  int *lineNum;
+};
+
 int client (int argc, char *argv[]) {
 
   shm_unlink("test.txt");
   int shmid = shm_open("test.txt", O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
   if (shmid == -1) {
     cout << "shm_open fail" << endl;
-  } else {
-    cout << "Shared Memory Created" << endl;
   }
 
   if (ftruncate(shmid, sizeof(struct shmbuf)) == -1) {
     cout << "Mem not truncated" << endl;
-  } else {
-    cout << "Mem truncated" << endl;
   }
 
   struct shmbuf *store = static_cast<shmbuf*>(mmap(NULL, sizeof(*store), PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0));
@@ -47,30 +50,29 @@ int client (int argc, char *argv[]) {
   if (sem_init(&store->sem2, 1, 0) == -1) {
     cout << "Error with sem_init on 2" << endl;
   }
+  
+  sem_post(&store->sem2);
 
   sem_t *sem = sem_open("/namesem", 0, 0, 0);
 
-  // Potential error maybe +1 to count
   store->count = strlen(argv[1]);
-  cout << "Args complete" << endl;
 
   if (sem_post(sem) == -1) {
     cout << "Named sem post error" << endl;
   }
   // Sends the important info from agrv to the shared memory
-  // Same thing here. May need to add +1 maybe not
-  cout << "Right before sending out path" << endl;
   memcpy(&store->buffer, argv[1], strlen(argv[1]));
   cout << store->buffer << endl;
   if (sem_wait(&store->sem1) == -1) {
     cout << "sem_wait error" << endl;
   }
-  cout << "Wrote args to mem" << endl;
 
   pthread_t threads[NUMTHREADS];
+  struct thread_info td[NUMTHREADS];
+  void *res;
+  int lineCount = 1;
 
   while (true) {
-    cout << "test" << endl;
     if (sem_wait(&store->sem1) == -1) {
       cout << "Error with sem_wait when reading mem" << endl;
     }
@@ -80,18 +82,44 @@ int client (int argc, char *argv[]) {
       strncpy(line,&store->buffer[i*OFFSET], OFFSET);
       lines.push_back(line);
     }
-    
-    /*
-    for (int i = 0; i < 4; i++) {
-      cout << lines.at(i) << endl;
-    }
-    */
-  
-    for (int i = 0; i < 4; i++) {
-      thread t(checkLine, argv, lines.at(i), argc);
-    }
-    
 
+    int badFile = lines.at(0).compare("INVALID FILE");
+    if (badFile == 0) {
+      cerr << "INVALID FILE" << endl;
+      shmctl(shmid, IPC_RMID, NULL);
+      munmap(store->buffer,SIZE);
+      return 0;
+    }
+
+    int stop = lines.at(0).compare("STOP");
+    if (stop == 0) {
+      shmctl(shmid, IPC_RMID, NULL);
+      munmap(store->buffer,SIZE);
+      return 0;
+    }
+    
+    for (int i = 0; i < 4; i++) {
+      td[i].argNum = argc;
+      td[i].str = argv;
+      td[i].line = lines.at(i);
+      td[i].lineNum = &lineCount;
+
+      if (i != 0) {
+        if (pthread_join (threads[i-1], &res) != 0) {
+          cout << "Pthread join error" << endl;
+        }
+      }
+
+      int check = pthread_create(&threads[i], NULL, &checkLine, (void *)&td[i]);
+      if (check) {
+        cout << strerror(errno) << endl;
+        cout << "Failed to create thread" << endl;
+      }
+      if (store->toBreak) {
+        break;
+      }
+    }
+    
     if (sem_post(&store->sem2) == -1) {
       cout << "Error in sem_post while reading lines from shared memory" << endl;
     }
@@ -103,33 +131,50 @@ int client (int argc, char *argv[]) {
 }
 
 
-void checkLine (char *str[], string line, int argNum) {
-  if (str[3][0] == '+') {
-    for (int i = 2; i < argNum; i++) {
-      // For each keyword it checks if it is contained in the string.
-      // If found, it breaks the loop to avoid duplicates
-      if (line.find(str[i]) != string::npos) {
-         cout << line << endl;
+void* checkLine (void *threadarg) {
+  struct thread_info *data;
+  data = (struct thread_info *) threadarg;
+  if (data->argNum > 3) {
+    if (data->str[3][0] == '+') {
+      for (int i = 2; i < data->argNum; i++) {
+        if(i%2 == 0) {
+          // For each keyword it checks if it is contained in the string.
+          // If found, it breaks the loop to avoid duplicates
+          if (data->line.find(data->str[i]) != string::npos) {
+            cout << *(data->lineNum) << "\t";
+            cout << data->line << endl;
+            *(data->lineNum) = *(data->lineNum) + 1;
+            break;
+          }
+        }
       }
-    }
         // If the operator is AND
-  } else if (str[3][0] == 'x') {
-    bool toSend = true;
-    for (int i = 2; i < argNum; i++) {
-      // If even one of the keywords in not in the line,
-      // it tells the program to not send anything
-      if (line.find(str[i]) == string::npos) {
-        // Tracker to see if it should send
-        toSend = false;
+    } else if (data->str[3][0] == 'x') {
+      bool toSend = true;
+      for (int i = 2; i < data->argNum; i++) {
+        if (i%2 == 0) {
+          // If even one of the keywords in not in the line,
+          // it tells the program to not send anything
+          if (data->line.find(data->str[i]) == string::npos) {
+            // Tracker to see if it should send
+            toSend = false;
+            break;
+          }
+        }
+      }
+      if (toSend) {
+        cout << *(data->lineNum) << "\t";
+        cout << data->line << endl;
+        *(data->lineNum) = *(data->lineNum) + 1;
       }
     }
-    if (toSend) {
-      cout << line << endl;
-    }
-  // If there is only one argument given
-  } else if (argNum <= 3) {
-    if (line.find(str[1])) {
-      cout << line << endl;
+    // If there is only one argument given
+  } else if (data->argNum <= 3) {
+    if (data->line.find(data->str[1])) {
+      cout << *(data->lineNum) << "\t";
+      cout << data->line << endl;
+      *(data->lineNum) = *(data->lineNum) + 1;
     }
   }
+  return NULL;
 }
