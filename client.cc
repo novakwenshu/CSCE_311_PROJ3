@@ -13,13 +13,14 @@
 #include <string>
 #include <vector>
 #include "shmstruct.h"
+#include <client.h>
 
 #define SIZE 4096
 #define SEMNAME "SHMSEM"
 
 using namespace std;
 
-int main (int argc, char *argv[]) {
+int client (int argc, char *argv[]) {
 
   shm_unlink("test.txt");
   int shmid = shm_open("test.txt", O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
@@ -47,20 +48,18 @@ int main (int argc, char *argv[]) {
     cout << "Error with sem_init on 2" << endl;
   }
 
-  sem_t *sem = sem_open("Test_sem", O_CREAT | O_EXCL, 0644, 0);
-  char *op = (char*) malloc(sizeof(char) * 2);
-  
+  sem_t *sem = sem_open("/namesem", 0, 0, 0);
+
   // Potential error maybe +1 to count
   store->count = strlen(argv[1]);
   cout << "Args complete" << endl;
 
-  cout << "test" << endl;
   if (sem_post(sem) == -1) {
     cout << "Named sem post error" << endl;
   }
   // Sends the important info from agrv to the shared memory
   // Same thing here. May need to add +1 maybe not
-  cout << "test" << endl;
+  cout << "Right before sending out path" << endl;
   memcpy(&store->buffer, argv[1], strlen(argv[1]));
   cout << store->buffer << endl;
   if (sem_wait(&store->sem1) == -1) {
@@ -68,9 +67,11 @@ int main (int argc, char *argv[]) {
   }
   cout << "Wrote args to mem" << endl;
 
+  pthread_t threads[NUMTHREADS];
+
   while (true) {
     cout << "test" << endl;
-    if (sem_wait(&store->sem2) == -1) {
+    if (sem_wait(&store->sem1) == -1) {
       cout << "Error with sem_wait when reading mem" << endl;
     }
     vector<string> lines;
@@ -79,10 +80,21 @@ int main (int argc, char *argv[]) {
       strncpy(line,&store->buffer[i*OFFSET], OFFSET);
       lines.push_back(line);
     }
+    
+    /*
     for (int i = 0; i < 4; i++) {
       cout << lines.at(i) << endl;
     }
+    */
+  
+    for (int i = 0; i < 4; i++) {
+      thread t(checkLine, argv, lines.at(i), argc);
+    }
+    
 
+    if (sem_post(&store->sem2) == -1) {
+      cout << "Error in sem_post while reading lines from shared memory" << endl;
+    }
   }
   
   shmctl(shmid, IPC_RMID, NULL);
@@ -91,12 +103,12 @@ int main (int argc, char *argv[]) {
 }
 
 
-void checkLine (char *str[], char *line, int argNum) {
+void checkLine (char *str[], string line, int argNum) {
   if (str[3][0] == '+') {
     for (int i = 2; i < argNum; i++) {
       // For each keyword it checks if it is contained in the string.
       // If found, it breaks the loop to avoid duplicates
-      if (strstr(line, str[i]) != NULL) {
+      if (line.find(str[i]) != string::npos) {
          cout << line << endl;
       }
     }
@@ -106,7 +118,7 @@ void checkLine (char *str[], char *line, int argNum) {
     for (int i = 2; i < argNum; i++) {
       // If even one of the keywords in not in the line,
       // it tells the program to not send anything
-      if (strstr(line, str[i]) == NULL) {
+      if (line.find(str[i]) == string::npos) {
         // Tracker to see if it should send
         toSend = false;
       }
@@ -116,7 +128,7 @@ void checkLine (char *str[], char *line, int argNum) {
     }
   // If there is only one argument given
   } else if (argNum <= 3) {
-    if (strstr(line, str[1])) {
+    if (line.find(str[1])) {
       cout << line << endl;
     }
   }
