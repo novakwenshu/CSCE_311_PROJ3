@@ -51,7 +51,6 @@ int client (int argc, char *argv[]) {
     cout << "Error with sem_init on 2" << endl;
   }
   
-  sem_post(&store->sem2);
 
   sem_t *sem = sem_open("/namesem", 0, 0, 0);
 
@@ -62,7 +61,6 @@ int client (int argc, char *argv[]) {
   }
   // Sends the important info from agrv to the shared memory
   memcpy(&store->buffer, argv[1], strlen(argv[1]));
-  cout << store->buffer << endl;
   if (sem_wait(&store->sem1) == -1) {
     cout << "sem_wait error" << endl;
   }
@@ -76,6 +74,7 @@ int client (int argc, char *argv[]) {
     if (sem_wait(&store->sem1) == -1) {
       cout << "Error with sem_wait when reading mem" << endl;
     }
+    
     vector<string> lines;
     for (int i = 0; i < 4; i++) {
       char line[BUF_SIZE];
@@ -169,8 +168,8 @@ void* checkLine (void *threadarg) {
       }
     }
     // If there is only one argument given
-  } else if (data->argNum <= 3) {
-    if (data->line.find(data->str[1])) {
+  } else if (data->argNum == 3) {
+    if ((data->line.find(data->str[2])) != string::npos) {
       cout << *(data->lineNum) << "\t";
       cout << data->line << endl;
       *(data->lineNum) = *(data->lineNum) + 1;

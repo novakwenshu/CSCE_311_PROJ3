@@ -47,17 +47,19 @@ int server (int argc, char *argv[]) {
     char *path = (char*) malloc(sizeof(char)* strlen(store->buffer)+1);
     FILE* file;
     path = store->buffer;
+    cout << store->buffer << endl;
 
     clog << "CLIENT REQUEST RECIEVED" << endl;
     clog << "\tMEMORY OPEN" << endl;
 
     file = fopen(path, "r");
-    clog << "\tOPENING PATH" << endl;
     int count = 0;
     if (sem_post(&store->sem1) == -1) {
     cout << "sem_wait error" << endl;
     }
+    
     if (file != NULL) {
+      clog << "\tOPENING: " << path << endl;
       size_t len = 0;
       char *line = NULL;
       while ((getline(&line, &len, file)) != -1) {
@@ -84,7 +86,9 @@ int server (int argc, char *argv[]) {
         cout << "Error in sem_post while putting lines in shared memory" << endl;
       }
       memset(store->buffer, '\0', sizeof(store->buffer));
-    } else {
+      fclose(file);
+      clog << "\tFILE CLOSED" << endl;
+    } else if (file == NULL) {
         memcpy(&store->buffer[0], "INVALID FILE", strlen("INVALID FILE")+1);
         if (sem_post(&store->sem1) == -1) {
           cout << "Error in sem_wait while putting lines in shared memory" << endl;
@@ -93,13 +97,9 @@ int server (int argc, char *argv[]) {
 
     memcpy(&store->buffer[0], "STOP", strlen("STOP")+1);
     if (sem_post(&store->sem1) == -1) {
-      cout << "Error in sem_wait while putting lines in shared memory" << endl;
+      cout << "Error with sem_wait when reading mem" << endl;
     }
-    if (sem_wait(&store->sem2) == -1) {
-        cout << "Error in sem_post while putting lines in shared memory" << endl;
-    }
-    fclose(file);
-    clog << "\tFILE CLOSED" << endl;
+
     shmctl(shmid, IPC_RMID, NULL);
     munmap(store->buffer,4096);
     clog << "\tMEMORY CLOSED" << endl;
