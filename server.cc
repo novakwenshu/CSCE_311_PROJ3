@@ -114,9 +114,11 @@ int server (int argc, char *argv[]) {
       cout << "Error with sem_wait when reading mem" << endl;
     }
 
-    // Closes memory
+    // Closes memory and named semaphore
     shmctl(shmid, IPC_RMID, NULL);
     munmap(store->buffer,4096);
     clog << "\tMEMORY CLOSED" << endl;
+    sem_unlink("/namesem");
+    sem_destroy(sem);
   }
 }
