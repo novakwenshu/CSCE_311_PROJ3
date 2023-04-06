@@ -21,5 +21,4 @@ struct shmbuf {
   int toBreak = 0;
 };
 
-
-#endif // SHMSTRUCT_H_
+#endif  // SHMSTRUCT_H_

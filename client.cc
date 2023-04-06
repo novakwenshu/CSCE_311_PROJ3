@@ -1,24 +1,20 @@
-// Copright 2023 William Novak-Condy
-#include <iostream>
-#include <sys/ipc.h>
-#include <stdio.h>
-#include <sys/shm.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <thread>
-#include <sys/mman.h>
-#include <semaphore.h>
-#include <sys/stat.h>
-#include <cstring>
-#include <string>
-#include <vector>
-#include "shmstruct.h"
+// Copyright 2023 William Novak-Condy
+#include <shmstruct.h>
 #include <client.h>
+#include <vector>
+#include <iostream>
+#include <string>
+#include <cstring>
+
 
 #define SIZE 4096
-#define SEMNAME "SHMSEM"
 
-using namespace std;
+using std::cout;
+using std::endl;
+using std::vector;
+using std::string;
+using std::cerr;
+
 
 // SHM = Shared Memory
 // Struct to hold info for the method called by the threads
@@ -29,12 +25,12 @@ struct thread_info {
   int *lineNum;
 };
 
-int client (int argc, char *argv[]) {
-
+int client(int argc, char *argv[]) {
   // Makes sure there is no existing memory
   shm_unlink("test.txt");
   // STEP 1 Creates the shared memory and truncates it
-  int shmid = shm_open("test.txt", O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+  int shmid = shm_open("test.txt", O_CREAT | O_EXCL |
+                        O_RDWR, S_IRUSR | S_IWUSR);
   if (shmid == -1) {
     cout << "shm_open fail" << endl;
   }
@@ -43,7 +39,8 @@ int client (int argc, char *argv[]) {
     cout << "Mem not truncated" << endl;
   }
   // Maps the memory
-  struct shmbuf *store = static_cast<shmbuf*>(mmap(NULL, sizeof(*store), PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0));
+  struct shmbuf *store = static_cast<shmbuf*>(mmap(NULL,
+                sizeof(*store), PROT_READ | PROT_WRITE, MAP_SHARED, shmid, 0));
   if (store == MAP_FAILED) {
     cout << "MAP FAILED" << endl;
   }
@@ -84,28 +81,28 @@ int client (int argc, char *argv[]) {
     vector<string> lines;
     for (int i = 0; i < 4; i++) {
       char line[BUF_SIZE];
-      strncpy(line,&store->buffer[i*OFFSET], OFFSET);
+      strncpy(line, &store->buffer[i*OFFSET], OFFSET);
       lines.push_back(line);
     }
 
     // Checks if the server sent the message that it could not open the file
-    int badFile = lines.at(0).compare("INVALID FILE");
-    if (badFile == 0) {
+    if (lines.at(0).find("INVALID FILE") != string::npos) {
       cerr << "INVALID FILE" << endl;
       shmctl(shmid, IPC_RMID, NULL);
-      munmap(store->buffer,SIZE);
+      munmap(store->buffer, SIZE);
       return 0;
     }
-    // Checks if the server has signaled that there are no more lines left in the file to send
+    // Checks if the server has signaled that there are no more lines
+    // left in the file to send
     int stop = lines.at(0).compare("STOP");
     if (stop == 0) {
       // STEP 6 Destroys mem
       shmctl(shmid, IPC_RMID, NULL);
-      munmap(store->buffer,SIZE);
+      munmap(store->buffer, SIZE);
       // STEP 7 returns 0
       return 0;
     }
-    
+
     // This loop ensures that the threads run in order
     for (int i = 0; i < 4; i++) {
       td[i].argNum = argc;
@@ -114,12 +111,13 @@ int client (int argc, char *argv[]) {
       td[i].lineNum = &lineCount;
       // if threads have already been created
       if (i != 0) {
-        if (pthread_join (threads[i-1], &res) != 0) {
+        if ((pthread_join(threads[i-1], &res)) != 0) {
           cout << "Pthread join error" << endl;
         }
       }
       // STEP 4 Creating a thread for each line sent.
-      int check = pthread_create(&threads[i], NULL, &checkLine, (void *)&td[i]);
+      int check = pthread_create(&threads[i], NULL, &checkLine,
+                  reinterpret_cast<void*>(&td[i]));
       if (check) {
         cout << strerror(errno) << endl;
         cout << "Failed to create thread" << endl;
@@ -130,17 +128,17 @@ int client (int argc, char *argv[]) {
     }
     // Signals the server that it is ready for more lines
     if (sem_post(&store->sem2) == -1) {
-      cout << "Error in sem_post while reading lines from shared memory" << endl;
+      cout << "Error in sem_post" << endl;
     }
   }
   // If some how it breaks the while loop it destoys the memory
   shmctl(shmid, IPC_RMID, NULL);
-  munmap(store->buffer,SIZE);
+  munmap(store->buffer, SIZE);
   return 0;
 }
 
 // Method that the threads call to check if the line should be print out
-void* checkLine (void *threadarg) {
+void* checkLine(void *threadarg) {
   struct thread_info *data;
   data = (struct thread_info *) threadarg;
   if (data->argNum > 3) {
@@ -148,11 +146,12 @@ void* checkLine (void *threadarg) {
     if (data->str[3][0] == '+') {
       for (int i = 2; i < data->argNum; i++) {
         // The key words will only be in the even indices
-        if(i%2 == 0) {
+        if (i%2 == 0) {
           // For each keyword it checks if it is contained in the string.
           // If found, it breaks the loop to avoid duplicates
           if (data->line.find(data->str[i]) != string::npos) {
-            // STEP 5 Printing lines to cout if meets the criteria based on operator
+            // STEP 5 Printing lines to cout if meets
+            // the criteria based on operator
             cout << *(data->lineNum) << "\t";
             cout << data->line << endl;
             *(data->lineNum) = *(data->lineNum) + 1;
