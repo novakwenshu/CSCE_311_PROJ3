@@ -1,8 +1,8 @@
 // Copyright 2023 William Novak-Condy
 #include <iostream>
 #include <cstring>
-#include "shmstruct.h"
-#include "server.h"
+#include "shmstruct.h"  // NOLINT
+#include "server.h"  // NOLINT
 
 using std::cout;
 using std::endl;
@@ -103,6 +103,10 @@ int server(int argc, char *argv[]) {
         if (sem_post(&store->sem1) == -1) {
           cout << "Error in sem_wait" << endl;
         }
+        // Closes memory and named semaphore
+        shmctl(shmid, IPC_RMID, NULL);
+        munmap(store->buffer, 4096);
+        clog << "\tMEMORY CLOSED" << endl;
         continue;
     }
 
